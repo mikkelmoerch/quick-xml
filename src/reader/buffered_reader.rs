@@ -76,6 +76,7 @@ macro_rules! impl_buffered_source {
             self $(.$reader)? .consume(1);
 
             let bang_type = BangType::new(self.peek_one() $(.$await)? ?)?;
+            let mut bang_buf: Vec<u8> = vec![];
 
             loop {
                 match self $(.$reader)? .fill_buf() $(.$await)? {
@@ -83,17 +84,16 @@ macro_rules! impl_buffered_source {
                     // somewhere sane rather than at the EOF
                     Ok(n) if n.is_empty() => return Err(bang_type.to_err()),
                     Ok(available) => {
-                        if let Some((consumed, used)) = bang_type.parse(available, read) {
+                        bang_buf.extend_from_slice(available);
+
+                        if let Some((consumed, used)) = bang_type.parse(&bang_buf, read) {
                             buf.extend_from_slice(consumed);
 
-                            self $(.$reader)? .consume(used);
-                            read += used;
+                            self $(.$reader)? .consume(used - read);
 
-                            *position += read;
+                            *position += used;
                             break;
                         } else {
-                            buf.extend_from_slice(available);
-
                             let used = available.len();
                             self $(.$reader)? .consume(used);
                             read += used;
