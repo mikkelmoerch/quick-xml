@@ -3,7 +3,7 @@ use quick_xml::events::Event::*;
 use quick_xml::name::QName;
 use quick_xml::reader::Reader;
 use quick_xml::Error;
-use std::borrow::Cow;
+use std::{borrow::Cow, path::Path};
 
 #[cfg(feature = "serialize")]
 use serde::{Deserialize, Serialize};
@@ -938,4 +938,21 @@ fn test_issue305_unflatten_nesting() -> Result<(), quick_xml::DeError> {
     );
 
     Ok(())
+}
+
+#[test]
+fn test_cdata_issue_sample() {
+    let path = Path::new("tests/documents/cdata_sample.xml");
+    let mut r = Reader::from_file(path).unwrap();
+    let mut buf = Vec::new();
+    let mut count = 0;
+    loop {
+        match r.read_event_into(&mut buf).unwrap() {
+            Start(_) => count += 1,
+            CData(e) => println!("{:?}", e.escape_ascii().to_string()),
+            Eof => break,
+            _ => (),
+        }
+    }
+    println!("{}", count);
 }
