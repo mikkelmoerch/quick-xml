@@ -110,6 +110,8 @@ macro_rules! impl_buffered_source {
             self $(.$reader)? .consume(1);
 
             let bang_type = BangType::new(self.peek_one() $(.$await)? ?)?;
+
+            let mut bang_buf_start = 0;
             let mut bang_buf: Vec<u8> = vec![];
 
             loop {
@@ -120,17 +122,20 @@ macro_rules! impl_buffered_source {
                     Ok(available) => {
                         bang_buf.extend_from_slice(available);
 
-                        if let Some((consumed, used)) = bang_type.parse(&bang_buf, read) {
+                        if let Some((consumed, buf_used)) = bang_type.parse(&bang_buf, read) {
                             buf.extend_from_slice(consumed);
+                            let used = buf_used - bang_buf_start;
 
-                            self $(.$reader)? .consume(used - read);
+                            self $(.$reader)? .consume(used);
+                            read += used;
 
-                            *position += used;
+                            *position += read;
                             break;
                         } else {
                             let used = available.len();
                             self $(.$reader)? .consume(used);
                             read += used;
+                            bang_buf_start += used;
                         }
                     }
                     Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
