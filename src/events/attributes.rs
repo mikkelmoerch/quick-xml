@@ -191,7 +191,7 @@ pub struct Attributes<'a> {
 impl<'a> Attributes<'a> {
     /// Internal constructor, used by `BytesStart`. Supplies data in reader's encoding
     #[inline]
-    pub(crate) fn wrap(buf: &'a [u8], pos: usize, html: bool) -> Self {
+    pub(crate) const fn wrap(buf: &'a [u8], pos: usize, html: bool) -> Self {
         Self {
             bytes: buf,
             state: IterState::new(pos, html),
@@ -199,12 +199,12 @@ impl<'a> Attributes<'a> {
     }
 
     /// Creates a new attribute iterator from a buffer.
-    pub fn new(buf: &'a str, pos: usize) -> Self {
+    pub const fn new(buf: &'a str, pos: usize) -> Self {
         Self::wrap(buf.as_bytes(), pos, false)
     }
 
     /// Creates a new attribute iterator from a buffer, allowing HTML attribute syntax.
-    pub fn html(buf: &'a str, pos: usize) -> Self {
+    pub const fn html(buf: &'a str, pos: usize) -> Self {
         Self::wrap(buf.as_bytes(), pos, true)
     }
 
@@ -241,7 +241,7 @@ impl<'a> FusedIterator for Attributes<'a> {}
 ///
 /// Recovery position in examples shows the position from which parsing of the
 /// next attribute will be attempted.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum AttrError {
     /// Attribute key was not followed by `=`, position relative to the start of
     /// the owning tag is provided.
@@ -412,7 +412,7 @@ impl<T> Attr<T> {
 impl<'a> Attr<&'a [u8]> {
     /// Returns the key value
     #[inline]
-    pub fn key(&self) -> QName<'a> {
+    pub const fn key(&self) -> QName<'a> {
         QName(match self {
             Attr::DoubleQ(key, _) => key,
             Attr::SingleQ(key, _) => key,
@@ -425,7 +425,7 @@ impl<'a> Attr<&'a [u8]> {
     ///
     /// [HTML specification]: https://www.w3.org/TR/2012/WD-html-markup-20120329/syntax.html#syntax-attr-empty
     #[inline]
-    pub fn value(&self) -> &'a [u8] {
+    pub const fn value(&self) -> &'a [u8] {
         match self {
             Attr::DoubleQ(_, value) => value,
             Attr::SingleQ(_, value) => value,
@@ -514,7 +514,7 @@ pub(crate) struct IterState {
 }
 
 impl IterState {
-    pub fn new(offset: usize, html: bool) -> Self {
+    pub const fn new(offset: usize, html: bool) -> Self {
         Self {
             state: State::Next(offset),
             html,

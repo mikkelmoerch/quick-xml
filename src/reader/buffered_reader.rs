@@ -14,6 +14,40 @@ use crate::reader::{is_whitespace, BangType, ReadElementState, Reader, Span, Xml
 
 macro_rules! impl_buffered_source {
     ($($lf:lifetime, $reader:tt, $async:ident, $await:ident)?) => {
+        #[cfg(not(feature = "encoding"))]
+        $($async)? fn remove_utf8_bom(&mut self) -> Result<()> {
+            use crate::encoding::UTF8_BOM;
+
+            loop {
+                break match self $(.$reader)? .fill_buf() $(.$await)? {
+                    Ok(n) => {
+                        if n.starts_with(UTF8_BOM) {
+                            self $(.$reader)? .consume(UTF8_BOM.len());
+                        }
+                        Ok(())
+                    },
+                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(e) => Err(Error::Io(e)),
+                };
+            }
+        }
+
+        #[cfg(feature = "encoding")]
+        $($async)? fn detect_encoding(&mut self) -> Result<Option<&'static encoding_rs::Encoding>> {
+            loop {
+                break match self $(.$reader)? .fill_buf() $(.$await)? {
+                    Ok(n) => if let Some((enc, bom_len)) = crate::encoding::detect_encoding(n) {
+                        self $(.$reader)? .consume(bom_len);
+                        Ok(Some(enc))
+                    } else {
+                        Ok(None)
+                    },
+                    Err(ref e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(e) => Err(Error::Io(e)),
+                };
+            }
+        }
+
         #[inline]
         $($async)? fn read_bytes_until $(<$lf>)? (
             &mut self,
@@ -216,8 +250,7 @@ impl<'b, R: BufRead> XmlSource<'b, &'b mut Vec<u8>> for R {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// This is an implementation of [`Reader`] for reading from a [`BufRead`] as
-/// underlying byte stream.
+/// This is an implementation for reading from a [`BufRead`] as underlying byte stream.
 impl<R: BufRead> Reader<R> {
     /// Reads the next `Event`.
     ///
@@ -243,7 +276,7 @@ impl<R: BufRead> Reader<R> {
     /// let xml = r#"<tag1 att1 = "test">
     ///                 <tag2><!--Test comment-->Test</tag2>
     ///                 <tag2>Test 2</tag2>
-    ///             </tag1>"#;
+    ///              </tag1>"#;
     /// let mut reader = Reader::from_str(xml);
     /// reader.trim_text(true);
     /// let mut count = 0;
@@ -251,7 +284,7 @@ impl<R: BufRead> Reader<R> {
     /// let mut txt = Vec::new();
     /// loop {
     ///     match reader.read_event_into(&mut buf) {
-    ///         Ok(Event::Start(ref e)) => count += 1,
+    ///         Ok(Event::Start(_)) => count += 1,
     ///         Ok(Event::Text(e)) => txt.push(e.unescape().unwrap().into_owned()),
     ///         Err(e) => panic!("Error at position {}: {:?}", reader.buffer_position(), e),
     ///         Ok(Event::Eof) => break,
@@ -259,8 +292,8 @@ impl<R: BufRead> Reader<R> {
     ///     }
     ///     buf.clear();
     /// }
-    /// println!("Found {} start events", count);
-    /// println!("Text events: {:?}", txt);
+    /// assert_eq!(count, 3);
+    /// assert_eq!(txt, vec!["Test".to_string(), "Test 2".to_string()]);
     /// ```
     #[inline]
     pub fn read_event_into<'b>(&mut self, buf: &'b mut Vec<u8>) -> Result<Event<'b>> {
@@ -275,7 +308,8 @@ impl<R: BufRead> Reader<R> {
     /// a closing tag or an empty slice, if [`expand_empty_elements`] is set and
     /// this method was called after reading expanded [`Start`] event.
     ///
-    /// Manages nested cases where parent and child elements have the same name.
+    /// Manages nested cases where parent and child elements have the _literally_
+    /// same name.
     ///
     /// If corresponding [`End`] event will not be found, the [`Error::UnexpectedEof`]
     /// will be returned. In particularly, that error will be returned if you call
@@ -299,7 +333,7 @@ impl<R: BufRead> Reader<R> {
     ///
     /// # Namespaces
     ///
-    /// While the [`Reader`] does not support namespace resolution, namespaces
+    /// While the `Reader` does not support namespace resolution, namespaces
     /// does not change the algorithm for comparing names. Although the names
     /// `a:name` and `b:name` where both prefixes `a` and `b` resolves to the
     /// same namespace, are semantically equivalent, `</b:name>` cannot close
@@ -396,6 +430,7 @@ mod test {
         use pretty_assertions::assert_eq;
 
         /// Checks that encoding is detected by BOM and changed after XML declaration
+        /// BOM indicates UTF-16LE, but XML - windows-1251
         #[test]
         fn bom_detected() {
             let mut reader =
@@ -403,9 +438,6 @@ mod test {
             let mut buf = Vec::new();
 
             assert_eq!(reader.decoder().encoding(), UTF_8);
-            reader.read_event_into(&mut buf).unwrap();
-            assert_eq!(reader.decoder().encoding(), UTF_16LE);
-
             reader.read_event_into(&mut buf).unwrap();
             assert_eq!(reader.decoder().encoding(), WINDOWS_1251);
 

@@ -21,7 +21,7 @@ pub struct QName<'a>(pub &'a [u8]);
 impl<'a> QName<'a> {
     /// Converts this name to an internal slice representation.
     #[inline(always)]
-    pub fn into_inner(self) -> &'a [u8] {
+    pub const fn into_inner(self) -> &'a [u8] {
         self.0
     }
 
@@ -138,7 +138,7 @@ pub struct LocalName<'a>(&'a [u8]);
 impl<'a> LocalName<'a> {
     /// Converts this name to an internal slice representation.
     #[inline(always)]
-    pub fn into_inner(self) -> &'a [u8] {
+    pub const fn into_inner(self) -> &'a [u8] {
         self.0
     }
 }
@@ -171,7 +171,7 @@ impl<'a> From<QName<'a>> for LocalName<'a> {
     /// ```
     #[inline]
     fn from(name: QName<'a>) -> Self {
-        Self(name.index().map_or(&name.0, |i| &name.0[i + 1..]))
+        Self(name.index().map_or(name.0, |i| &name.0[i + 1..]))
     }
 }
 
@@ -188,7 +188,7 @@ pub struct Prefix<'a>(&'a [u8]);
 impl<'a> Prefix<'a> {
     /// Extracts internal slice
     #[inline(always)]
-    pub fn into_inner(self) -> &'a [u8] {
+    pub const fn into_inner(self) -> &'a [u8] {
         self.0
     }
 }
@@ -212,7 +212,7 @@ impl<'a> AsRef<[u8]> for Prefix<'a> {
 /// [XML Schema specification](https://www.w3.org/TR/xml-names/#ns-decl)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum PrefixDeclaration<'a> {
-    /// XML attribute binds a default namespace. Corresponds to `xmlns` in in `xmlns="..."`
+    /// XML attribute binds a default namespace. Corresponds to `xmlns` in `xmlns="..."`
     Default,
     /// XML attribute binds a specified prefix to a namespace. Corresponds to a
     /// `prefix` in `xmlns:prefix="..."`, which is stored as payload of this variant.
@@ -253,7 +253,7 @@ impl<'a> Namespace<'a> {
     /// [non-normalized]: https://www.w3.org/TR/REC-xml/#AVNormalize
     /// [IRI reference]: https://datatracker.ietf.org/doc/html/rfc3987
     #[inline(always)]
-    pub fn into_inner(self) -> &'a [u8] {
+    pub const fn into_inner(self) -> &'a [u8] {
         self.0
     }
     //TODO: implement value normalization and use it when comparing namespaces
@@ -414,7 +414,7 @@ impl NamespaceResolver {
                 match k.as_namespace_binding() {
                     Some(PrefixDeclaration::Default) => {
                         let start = buffer.len();
-                        buffer.extend_from_slice(&*v);
+                        buffer.extend_from_slice(&v);
                         self.bindings.push(NamespaceEntry {
                             start,
                             prefix_len: 0,
@@ -425,7 +425,7 @@ impl NamespaceResolver {
                     Some(PrefixDeclaration::Named(prefix)) => {
                         let start = buffer.len();
                         buffer.extend_from_slice(prefix);
-                        buffer.extend_from_slice(&*v);
+                        buffer.extend_from_slice(&v);
                         self.bindings.push(NamespaceEntry {
                             start,
                             prefix_len: prefix.len(),

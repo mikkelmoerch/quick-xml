@@ -1,6 +1,6 @@
 //! Manage xml character escapes
 
-use memchr;
+use memchr::memchr2_iter;
 use std::borrow::Cow;
 use std::ops::Range;
 
@@ -132,13 +132,21 @@ fn _escape<F: Fn(u8) -> bool>(raw: &str, escape_chars: F) -> Cow<str> {
 }
 
 /// Unescape an `&str` and replaces all xml escaped characters (`&...;`) into
-/// their corresponding value
+/// their corresponding value.
+///
+/// If feature `escape-html` is enabled, then recognizes all [HTML5 escapes].
+///
+/// [HTML5 escapes]: https://dev.w3.org/html5/html-author/charref
 pub fn unescape(raw: &str) -> Result<Cow<str>, EscapeError> {
     unescape_with(raw, |_| None)
 }
 
 /// Unescape an `&str` and replaces all xml escaped characters (`&...;`) into
 /// their corresponding value, using a resolver function for custom entities.
+///
+/// If feature `escape-html` is enabled, then recognizes all [HTML5 escapes].
+///
+/// [HTML5 escapes]: https://dev.w3.org/html5/html-author/charref
 pub fn unescape_with<'input, 'entity, F>(
     raw: &'input str,
     resolve_entity: F,
@@ -150,7 +158,7 @@ where
     let bytes = raw.as_bytes();
     let mut unescaped = None;
     let mut last_end = 0;
-    let mut iter = memchr::memchr2_iter(b'&', b';', bytes);
+    let mut iter = memchr2_iter(b'&', b';', bytes);
     while let Some(start) = iter.by_ref().find(|p| bytes[*p] == b'&') {
         match iter.next() {
             Some(end) if bytes[end] == b';' => {
@@ -163,7 +171,7 @@ where
 
                 // search for character correctness
                 let pat = &raw[start + 1..end];
-                if pat.starts_with("#") {
+                if pat.starts_with('#') {
                     let entity = &pat[1..]; // starts after the #
                     let codepoint = parse_number(entity, start..end)?;
                     unescaped.push_str(codepoint.encode_utf8(&mut [0u8; 4]));
@@ -211,6 +219,7 @@ const fn named_entity(name: &str) -> Option<&str> {
 const fn named_entity(name: &str) -> Option<&str> {
     // imported from https://dev.w3.org/html5/html-author/charref
     // match over strings are not allowed in const functions
+    //TODO: automate up-to-dating using https://html.spec.whatwg.org/entities.json
     let s = match name.as_bytes() {
         b"Tab" => "\u{09}",
         b"NewLine" => "\u{0A}",
@@ -1672,10 +1681,10 @@ const fn named_entity(name: &str) -> Option<&str> {
 }
 
 fn parse_number(bytes: &str, range: Range<usize>) -> Result<char, EscapeError> {
-    let code = if bytes.starts_with("x") {
+    let code = if bytes.starts_with('x') {
         parse_hexadecimal(&bytes[1..])
     } else {
-        parse_decimal(&bytes)
+        parse_decimal(bytes)
     }?;
     if code == 0 {
         return Err(EscapeError::EntityWithNull(range));

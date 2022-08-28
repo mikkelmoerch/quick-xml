@@ -7,7 +7,7 @@ use std::borrow::Cow;
 #[cfg(feature = "encoding")]
 use crate::reader::EncodingRef;
 #[cfg(feature = "encoding")]
-use encoding_rs::UTF_8;
+use encoding_rs::{Encoding, UTF_8};
 
 use crate::errors::{Error, Result};
 use crate::events::Event;
@@ -16,9 +16,9 @@ use crate::reader::{is_whitespace, BangType, ReadElementState, Reader, Span, Xml
 
 use memchr;
 
-/// This is an implementation of [`Reader`] for reading from a `&[u8]` as
-/// underlying byte stream. This implementation supports not using an
-/// intermediate buffer as the byte slice itself can be used to borrow from.
+/// This is an implementation for reading from a `&[u8]` as underlying byte stream.
+/// This implementation supports not using an intermediate buffer as the byte slice
+/// itself can be used to borrow from.
 impl<'a> Reader<&'a [u8]> {
     /// Creates an XML reader from a string slice.
     pub fn from_str(s: &'a str) -> Self {
@@ -80,7 +80,8 @@ impl<'a> Reader<&'a [u8]> {
     /// a closing tag or an empty slice, if [`expand_empty_elements`] is set and
     /// this method was called after reading expanded [`Start`] event.
     ///
-    /// Manages nested cases where parent and child elements have the same name.
+    /// Manages nested cases where parent and child elements have the _literally_
+    /// same name.
     ///
     /// If corresponding [`End`] event will not be found, the [`Error::UnexpectedEof`]
     /// will be returned. In particularly, that error will be returned if you call
@@ -99,7 +100,7 @@ impl<'a> Reader<&'a [u8]> {
     ///
     /// # Namespaces
     ///
-    /// While the [`Reader`] does not support namespace resolution, namespaces
+    /// While the `Reader` does not support namespace resolution, namespaces
     /// does not change the algorithm for comparing names. Although the names
     /// `a:name` and `b:name` where both prefixes `a` and `b` resolves to the
     /// same namespace, are semantically equivalent, `</b:name>` cannot close
@@ -159,7 +160,8 @@ impl<'a> Reader<&'a [u8]> {
     /// Reads content between start and end tags, including any markup. This
     /// function is supposed to be called after you already read a [`Start`] event.
     ///
-    /// Manages nested cases where parent and child elements have the same name.
+    /// Manages nested cases where parent and child elements have the _literally_
+    /// same name.
     ///
     /// This method does not unescape read data, instead it returns content
     /// "as is" of the XML document. This is because it has no idea what text
@@ -234,6 +236,23 @@ impl<'a> Reader<&'a [u8]> {
 /// Implementation of `XmlSource` for `&[u8]` reader using a `Self` as buffer
 /// that will be borrowed by events. This implementation provides a zero-copy deserialization
 impl<'a> XmlSource<'a, ()> for &'a [u8] {
+    #[cfg(not(feature = "encoding"))]
+    fn remove_utf8_bom(&mut self) -> Result<()> {
+        if self.starts_with(crate::encoding::UTF8_BOM) {
+            *self = &self[crate::encoding::UTF8_BOM.len()..];
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "encoding")]
+    fn detect_encoding(&mut self) -> Result<Option<&'static Encoding>> {
+        if let Some((enc, bom_len)) = crate::encoding::detect_encoding(self) {
+            *self = &self[bom_len..];
+            return Ok(Some(enc));
+        }
+        Ok(None)
+    }
+
     fn read_bytes_until(
         &mut self,
         byte: u8,
@@ -334,7 +353,7 @@ mod test {
     use crate::reader::XmlSource;
 
     /// Default buffer constructor just pass the byte array from the test
-    fn identity<T>(input: T) -> T {
+    const fn identity<T>(input: T) -> T {
         input
     }
 

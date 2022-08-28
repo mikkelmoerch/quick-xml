@@ -1,7 +1,7 @@
 #[cfg(feature = "encoding")]
 use encoding_rs::UTF_8;
 
-use crate::encoding::{self, Decoder};
+use crate::encoding::Decoder;
 use crate::errors::{Error, Result};
 use crate::events::{BytesCData, BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 #[cfg(feature = "encoding")]
@@ -63,11 +63,9 @@ impl Parser {
     ///
     /// # Parameters
     /// - `bytes`: data from the start of stream to the first `<` or from `>` to `<`
-    /// - `first`: if `true`, then this is the first call of that function,
-    ///   i. e. data from the start of stream and the bytes will be checked for a BOM.
     ///
     /// [`Text`]: Event::Text
-    pub fn read_text<'b>(&mut self, bytes: &'b [u8], first: bool) -> Result<Event<'b>> {
+    pub fn read_text<'b>(&mut self, bytes: &'b [u8]) -> Result<Event<'b>> {
         let mut content = bytes;
 
         if self.trim_text_end {
@@ -77,20 +75,6 @@ impl Parser {
                 .rposition(|&b| !is_whitespace(b))
                 .map_or_else(|| bytes.len(), |p| p + 1);
             content = &bytes[..len];
-        }
-
-        if first {
-            #[cfg(feature = "encoding")]
-            if self.encoding.can_be_refined() {
-                if let Some(encoding) = encoding::detect_encoding(bytes) {
-                    self.encoding = EncodingRef::BomDetected(encoding);
-                    content = encoding::remove_bom(content, encoding);
-                }
-            }
-            #[cfg(not(feature = "encoding"))]
-            if bytes.starts_with(encoding::UTF8_BOM) {
-                content = &bytes[encoding::UTF8_BOM.len()..];
-            }
         }
 
         Ok(Event::Text(BytesText::wrap(content, self.decoder())))
@@ -127,7 +111,7 @@ impl Parser {
                 let start = buf[8..]
                     .iter()
                     .position(|b| !is_whitespace(*b))
-                    .unwrap_or_else(|| len - 8);
+                    .unwrap_or(len - 8);
                 debug_assert!(start < len - 8, "DocType must have a name");
                 Ok(Event::DocType(BytesText::wrap(
                     &buf[8 + start..],
@@ -247,7 +231,7 @@ impl Parser {
     ///
     /// If `encoding` feature is enabled and no encoding is specified in declaration,
     /// defaults to UTF-8.
-    pub fn decoder(&self) -> Decoder {
+    pub const fn decoder(&self) -> Decoder {
         Decoder {
             #[cfg(feature = "encoding")]
             encoding: self.encoding.encoding(),

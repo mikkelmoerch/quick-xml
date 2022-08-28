@@ -12,6 +12,14 @@
 
 ### New Features
 
+### Bug Fixes
+
+### Misc Changes
+
+## 0.24.0 -- 2022-08-28
+
+### New Features
+
 - [#387]: Allow overlapping between elements of sequence and other elements
   (using new feature `overlapped-lists`)
 - [#393]: New module `name` with `QName`, `LocalName`, `Namespace`, `Prefix`
@@ -35,12 +43,28 @@
   |                        |`resolve`
   |`event_namespace`       |`resolve_element`
   |`attribute_namespace`   |`resolve_attribute`
-- [#439]: Added utilities `detect_encoding()`, `decode()`, and `decode_with_bom_removal()`
-  under the `quick-xml::encoding` namespace.
+- [#439]: Added utilities `detect_encoding()` and `decode()` under the `quick-xml::encoding` namespace.
 - [#450]: Added support of asynchronous [tokio](https://tokio.rs/) readers
 - [#455]: Change return type of all `read_to_end*` methods to return a span between tags
 - [#455]: Added `Reader::read_text` method to return a raw content (including markup) between tags
 - [#459]: Added a `Writer::write_bom()` method for inserting a Byte-Order-Mark into the document.
+- [#467]: The following functions made `const`:
+  - `Attr::key`
+  - `Attr::value`
+  - `Attributes::html`
+  - `Attributes::new`
+  - `BytesDecl::from_start`
+  - `Decoder::encoding`
+  - `LocalName::into_inner`
+  - `Namespace::into_inner`
+  - `Prefix::into_inner`
+  - `QName::into_inner`
+  - `Reader::buffer_position`
+  - `Reader::decoder`
+  - `Reader::get_ref`
+  - `Serializer::new`
+  - `Serializer::with_root`
+  - `Writer::new`
 
 ### Bug Fixes
 
@@ -95,7 +119,7 @@
 - [#191]: Remove `*_without_bom` methods from the `Attributes` struct because they are useless.
   Use the same-named methods without that suffix instead. Attribute values cannot contain BOM
 - [#191]: Remove `Reader::decode()` and `Reader::decode_without_bom()`, they are replaced by
-  `Decoder::decode()` and `Decoder::decode_with_bom_removal()`.
+  `Decoder::decode()` and nothing.
   Use `reader.decoder().decode_*(...)` instead of `reader.decode_*(...)` for now.
   `Reader::encoding()` is replaced by `Decoder::encoding()` as well
 - [#180]: Eliminated the differences in the decoding API when feature `encoding` enabled and when it is
@@ -183,6 +207,8 @@
 - [#459]: Made the `Writer::write()` method non-public as writing random bytes to a document is not generally useful or desirable.
 - [#459]: BOM bytes are no longer emitted as `Event::Text`. To write a BOM, use `Writer::write_bom()`.
 
+- [#467]: Removed `Deserializer::new` because it cannot be used outside of the quick-xml crate
+
 ### New Tests
 
 - [#9]: Added tests for incorrect nested tags in input
@@ -227,6 +253,7 @@
 [#455]: https://github.com/tafia/quick-xml/pull/455
 [#456]: https://github.com/tafia/quick-xml/pull/456
 [#459]: https://github.com/tafia/quick-xml/pull/459
+[#467]: https://github.com/tafia/quick-xml/pull/467
 
 ## 0.23.0 -- 2022-05-08
 

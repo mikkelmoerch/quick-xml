@@ -20,14 +20,16 @@ macro_rules! configure_methods {
         /// default), those tags are represented by an [`Empty`] event instead.
         ///
         /// Note, that setting this to `true` will lead to additional allocates that
-        /// needed to store tag name for an [`End`] event. There is no additional
-        /// allocation, however, if [`Self::check_end_names()`] is also set.
+        /// needed to store tag name for an [`End`] event. However if [`check_end_names`]
+        /// is also set, only one additional allocation will be performed that support
+        /// both these options.
         ///
         /// (`false` by default)
         ///
         /// [`Empty`]: Event::Empty
         /// [`Start`]: Event::Start
         /// [`End`]: Event::End
+        /// [`check_end_names`]: Self::check_end_names
         pub fn expand_empty_elements(&mut self, val: bool) -> &mut Self {
             self $(.$holder)? .parser.expand_empty_elements = val;
             self
@@ -35,12 +37,15 @@ macro_rules! configure_methods {
 
         /// Changes whether whitespace before and after character data should be removed.
         ///
-        /// When set to `true`, all [`Text`] events are trimmed. If they are empty, no event will be
-        /// pushed.
+        /// When set to `true`, all [`Text`] events are trimmed.
+        /// If after that the event is empty it will not be pushed.
+        ///
+        /// Changing this option automatically changes the [`trim_text_end`] option.
         ///
         /// (`false` by default)
         ///
         /// [`Text`]: Event::Text
+        /// [`trim_text_end`]: Self::trim_text_end
         pub fn trim_text(&mut self, val: bool) -> &mut Self {
             self $(.$holder)? .parser.trim_text_start = val;
             self $(.$holder)? .parser.trim_text_end = val;
@@ -50,6 +55,7 @@ macro_rules! configure_methods {
         /// Changes whether whitespace after character data should be removed.
         ///
         /// When set to `true`, trailing whitespace is trimmed in [`Text`] events.
+        /// If after that the event is empty it will not be pushed.
         ///
         /// (`false` by default)
         ///
@@ -99,13 +105,15 @@ macro_rules! configure_methods {
         /// contain the data of the mismatched end tag.
         ///
         /// Note, that setting this to `true` will lead to additional allocates that
-        /// needed to store tag name for an [`End`] event. There is no additional
-        /// allocation, however, if [`Self::expand_empty_elements()`] is also set.
+        /// needed to store tag name for an [`End`] event. However if [`expand_empty_elements`]
+        /// is also set, only one additional allocation will be performed that support
+        /// both these options.
         ///
         /// (`true` by default)
         ///
         /// [spec]: https://www.w3.org/TR/xml11/#dt-etag
         /// [`End`]: Event::End
+        /// [`expand_empty_elements`]: Self::expand_empty_elements
         pub fn check_end_names(&mut self, val: bool) -> &mut Self {
             self $(.$holder)? .parser.check_end_names = val;
             self
@@ -131,13 +139,31 @@ macro_rules! configure_methods {
 macro_rules! read_event_impl {
     (
         $self:ident, $buf:ident,
+        $reader:expr,
         $read_until_open:ident,
         $read_until_close:ident
         $(, $await:ident)?
     ) => {{
         let event = match $self.parser.state {
-            ParseState::Init => $self.$read_until_open($buf, true) $(.$await)?,
-            ParseState::ClosedTag => $self.$read_until_open($buf, false) $(.$await)?,
+            ParseState::Init => {
+                // If encoding set explicitly, we not need to detect it. For example,
+                // explicit UTF-8 set automatically if Reader was created using `from_str`.
+                // But we still need to remove BOM for consistency with no encoding
+                // feature enabled path
+                #[cfg(feature = "encoding")]
+                if let Some(encoding) = $reader.detect_encoding() $(.$await)? ? {
+                    if $self.parser.encoding.can_be_refined() {
+                        $self.parser.encoding = crate::reader::EncodingRef::BomDetected(encoding);
+                    }
+                }
+
+                // Removes UTF-8 BOM if it is present
+                #[cfg(not(feature = "encoding"))]
+                $reader.remove_utf8_bom() $(.$await)? ?;
+
+                $self.$read_until_open($buf) $(.$await)?
+            },
+            ParseState::ClosedTag => $self.$read_until_open($buf) $(.$await)?,
             ParseState::OpenedTag => $self.$read_until_close($buf) $(.$await)?,
             ParseState::Empty => $self.parser.close_expanded_empty(),
             ParseState::Exit => return Ok(Event::Eof),
@@ -152,7 +178,7 @@ macro_rules! read_event_impl {
 
 macro_rules! read_until_open {
     (
-        $self:ident, $buf:ident, $first:ident,
+        $self:ident, $buf:ident,
         $reader:expr,
         $read_event:ident
         $(, $await:ident)?
@@ -172,7 +198,7 @@ macro_rules! read_until_open {
             .read_bytes_until(b'<', $buf, &mut $self.parser.offset)
             $(.$await)?
         {
-            Ok(Some(bytes)) => $self.parser.read_text(bytes, $first),
+            Ok(Some(bytes)) => $self.parser.read_text(bytes),
             Ok(None) => Ok(Event::Eof),
             Err(e) => Err(e),
         }
@@ -351,7 +377,7 @@ enum EncodingRef {
 #[cfg(feature = "encoding")]
 impl EncodingRef {
     #[inline]
-    fn encoding(&self) -> &'static Encoding {
+    const fn encoding(&self) -> &'static Encoding {
         match self {
             Self::Implicit(e) => e,
             Self::Explicit(e) => e,
@@ -360,7 +386,7 @@ impl EncodingRef {
         }
     }
     #[inline]
-    fn can_be_refined(&self) -> bool {
+    const fn can_be_refined(&self) -> bool {
         match self {
             Self::Implicit(_) | Self::BomDetected(_) => true,
             Self::Explicit(_) | Self::XmlDetected(_) => false,
@@ -505,7 +531,7 @@ impl<R> Reader<R> {
     }
 
     /// Gets a reference to the underlying reader.
-    pub fn get_ref(&self) -> &R {
+    pub const fn get_ref(&self) -> &R {
         &self.reader
     }
 
@@ -517,7 +543,7 @@ impl<R> Reader<R> {
     /// Gets the current byte position in the input data.
     ///
     /// Useful when debugging errors.
-    pub fn buffer_position(&self) -> usize {
+    pub const fn buffer_position(&self) -> usize {
         // when internal state is OpenedTag, we have actually read until '<',
         // which we don't want to show
         if let ParseState::OpenedTag = self.parser.state {
@@ -535,7 +561,7 @@ impl<R> Reader<R> {
     /// If `encoding` feature is enabled and no encoding is specified in declaration,
     /// defaults to UTF-8.
     #[inline]
-    pub fn decoder(&self) -> Decoder {
+    pub const fn decoder(&self) -> Decoder {
         self.parser.decoder()
     }
 }
@@ -549,15 +575,15 @@ impl<R> Reader<R> {
     where
         R: XmlSource<'i, B>,
     {
-        read_event_impl!(self, buf, read_until_open, read_until_close)
+        read_event_impl!(self, buf, self.reader, read_until_open, read_until_close)
     }
 
     /// Read until '<' is found, moves reader to an `OpenedTag` state and returns a `Text` event.
-    fn read_until_open<'i, B>(&mut self, buf: B, first: bool) -> Result<Event<'i>>
+    fn read_until_open<'i, B>(&mut self, buf: B) -> Result<Event<'i>>
     where
         R: XmlSource<'i, B>,
     {
-        read_until_open!(self, buf, first, self.reader, read_event_impl)
+        read_until_open!(self, buf, self.reader, read_event_impl)
     }
 
     /// Private function to read until `>` is found. This function expects that
@@ -587,6 +613,14 @@ impl<R> Reader<R> {
 /// - `B`: a type of a buffer that can be used to store data read from `Self` and
 ///   from which events can borrow
 trait XmlSource<'r, B> {
+    /// Removes UTF-8 BOM if it is present
+    #[cfg(not(feature = "encoding"))]
+    fn remove_utf8_bom(&mut self) -> Result<()>;
+
+    /// Determines encoding from the start of input and removes BOM if it is present
+    #[cfg(feature = "encoding")]
+    fn detect_encoding(&mut self) -> Result<Option<&'static Encoding>>;
+
     /// Read input until `byte` is found or end of input is reached.
     ///
     /// Returns a slice of data read up to `byte`, which does not include into result.
@@ -789,7 +823,7 @@ impl ReadElementState {
 
 /// A function to check whether the byte is a whitespace (blank, new line, carriage return or tab)
 #[inline]
-pub(crate) fn is_whitespace(b: u8) -> bool {
+pub(crate) const fn is_whitespace(b: u8) -> bool {
     match b {
         b' ' | b'\r' | b'\n' | b'\t' => true,
         _ => false,
@@ -1571,20 +1605,39 @@ mod test {
                 use crate::reader::Reader;
                 use pretty_assertions::assert_eq;
 
+                /// When `encoding` feature is enabled, encoding should be detected
+                /// from BOM (UTF-8) and BOM should be stripped.
+                ///
+                /// When `encoding` feature is disabled, UTF-8 is assumed and BOM
+                /// character should be stripped for consistency
                 #[$test]
-                $($async)? fn text_at_start() {
-                    let mut reader = Reader::from_str("text");
+                $($async)? fn bom_from_reader() {
+                    let mut reader = Reader::from_reader("\u{feff}\u{feff}".as_bytes());
 
                     assert_eq!(
                         reader.$read_event($buf) $(.$await)? .unwrap(),
-                        Event::Text(BytesText::from_escaped("text").into())
+                        Event::Text(BytesText::from_escaped("\u{feff}"))
+                    );
+
+                    assert_eq!(
+                        reader.$read_event($buf) $(.$await)? .unwrap(),
+                        Event::Eof
                     );
                 }
 
+                /// When parsing from &str, encoding is fixed (UTF-8), so
+                /// - when `encoding` feature is disabled, the behavior the
+                ///   same as in `bom_from_reader` text
+                /// - when `encoding` feature is enabled, the behavior should
+                ///   stay consistent, so the first BOM character is stripped
                 #[$test]
-                #[should_panic] // Failure is expected until read_until_open() is smart enough to skip over irrelevant text events.
-                $($async)? fn bom_at_start() {
-                    let mut reader = Reader::from_str("\u{feff}");
+                $($async)? fn bom_from_str() {
+                    let mut reader = Reader::from_str("\u{feff}\u{feff}");
+
+                    assert_eq!(
+                        reader.$read_event($buf) $(.$await)? .unwrap(),
+                        Event::Text(BytesText::from_escaped("\u{feff}"))
+                    );
 
                     assert_eq!(
                         reader.$read_event($buf) $(.$await)? .unwrap(),
@@ -1655,15 +1708,9 @@ mod test {
                     );
                 }
 
-                /// Text event cannot be generated without preceding event of another type
                 #[$test]
                 $($async)? fn text() {
-                    let mut reader = Reader::from_str("<tag/>text");
-
-                    assert_eq!(
-                        reader.$read_event($buf) $(.$await)? .unwrap(),
-                        Event::Empty(BytesStart::new("tag"))
-                    );
+                    let mut reader = Reader::from_str("text");
 
                     assert_eq!(
                         reader.$read_event($buf) $(.$await)? .unwrap(),

@@ -16,8 +16,8 @@
 //! See [`Event`] for a list of all possible events.
 //!
 //! # Reading
-//! When reading a XML stream, the events are emitted by
-//! [`Reader::read_event_into`]. You must listen
+//! When reading a XML stream, the events are emitted by [`Reader::read_event`]
+//! and [`Reader::read_event_into`]. You must listen
 //! for the different types of events you are interested in.
 //!
 //! See [`Reader`] for further information.
@@ -29,6 +29,7 @@
 //!
 //! See [`Writer`] for further information.
 //!
+//! [`Reader::read_event`]: crate::reader::Reader::read_event
 //! [`Reader::read_event_into`]: crate::reader::Reader::read_event_into
 //! [`Reader`]: crate::reader::Reader
 //! [`Writer`]: crate::writer::Writer
@@ -71,7 +72,7 @@ pub struct BytesStart<'a> {
 impl<'a> BytesStart<'a> {
     /// Internal constructor, used by `Reader`. Supplies data in reader's encoding
     #[inline]
-    pub(crate) fn wrap(content: &'a [u8], name_len: usize) -> Self {
+    pub(crate) const fn wrap(content: &'a [u8], name_len: usize) -> Self {
         BytesStart {
             buf: Cow::Borrowed(content),
             name_len,
@@ -280,7 +281,7 @@ impl<'a> Deref for BytesStart<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &*self.buf
+        &self.buf
     }
 }
 
@@ -343,7 +344,7 @@ impl<'a> BytesDecl<'a> {
     }
 
     /// Creates a `BytesDecl` from a `BytesStart`
-    pub fn from_start(start: BytesStart<'a>) -> Self {
+    pub const fn from_start(start: BytesStart<'a>) -> Self {
         Self { content: start }
     }
 
@@ -500,12 +501,17 @@ impl<'a> BytesDecl<'a> {
             .transpose()
     }
 
-    /// Gets the decoder struct
+    /// Gets the actual encoding using [_get an encoding_](https://encoding.spec.whatwg.org/#concept-encoding-get)
+    /// algorithm.
+    ///
+    /// If encoding in not known, or `encoding` key was not found, returns `None`.
+    /// In case of duplicated `encoding` key, encoding, corresponding to the first
+    /// one, is returned.
     #[cfg(feature = "encoding")]
     pub fn encoder(&self) -> Option<&'static Encoding> {
         self.encoding()
             .and_then(|e| e.ok())
-            .and_then(|e| Encoding::for_label(&*e))
+            .and_then(|e| Encoding::for_label(&e))
     }
 
     /// Converts the event into an owned event.
@@ -528,7 +534,7 @@ impl<'a> Deref for BytesDecl<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &*self.content
+        &self.content
     }
 }
 
@@ -543,7 +549,7 @@ pub struct BytesEnd<'a> {
 impl<'a> BytesEnd<'a> {
     /// Internal constructor, used by `Reader`. Supplies data in reader's encoding
     #[inline]
-    pub(crate) fn wrap(name: Cow<'a, [u8]>) -> Self {
+    pub(crate) const fn wrap(name: Cow<'a, [u8]>) -> Self {
         BytesEnd { name }
     }
 
@@ -575,7 +581,7 @@ impl<'a> BytesEnd<'a> {
     /// Gets the undecoded raw tag name, as present in the input stream.
     #[inline]
     pub fn name(&self) -> QName {
-        QName(&*self.name)
+        QName(&self.name)
     }
 
     /// Gets the undecoded raw local tag name (excluding namespace) as present
@@ -600,7 +606,7 @@ impl<'a> Deref for BytesEnd<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &*self.name
+        &self.name
     }
 }
 
@@ -730,7 +736,7 @@ impl<'a> Deref for BytesText<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &*self.content
+        &self.content
     }
 }
 
@@ -861,7 +867,7 @@ impl<'a> Deref for BytesCData<'a> {
     type Target = [u8];
 
     fn deref(&self) -> &[u8] {
-        &*self.content
+        &self.content
     }
 }
 
@@ -935,14 +941,14 @@ impl<'a> Deref for Event<'a> {
 
     fn deref(&self) -> &[u8] {
         match *self {
-            Event::Start(ref e) | Event::Empty(ref e) => &*e,
-            Event::End(ref e) => &*e,
-            Event::Text(ref e) => &*e,
-            Event::Decl(ref e) => &*e,
-            Event::PI(ref e) => &*e,
-            Event::CData(ref e) => &*e,
-            Event::Comment(ref e) => &*e,
-            Event::DocType(ref e) => &*e,
+            Event::Start(ref e) | Event::Empty(ref e) => e,
+            Event::End(ref e) => e,
+            Event::Text(ref e) => e,
+            Event::Decl(ref e) => e,
+            Event::PI(ref e) => e,
+            Event::CData(ref e) => e,
+            Event::Comment(ref e) => e,
+            Event::DocType(ref e) => e,
             Event::Eof => &[],
         }
     }

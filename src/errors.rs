@@ -107,7 +107,7 @@ impl std::fmt::Display for Error {
             Error::EscapeError(e) => write!(f, "{}", e),
             Error::UnknownPrefix(prefix) => {
                 f.write_str("Unknown namespace prefix '")?;
-                write_byte_string(f, &prefix)?;
+                write_byte_string(f, prefix)?;
                 f.write_str("'")
             }
         }
@@ -168,7 +168,14 @@ pub mod serialize {
         /// Please open an issue at <https://github.com/tafia/quick-xml>, provide
         /// your Rust code and XML input.
         UnexpectedEnd(Vec<u8>),
-        /// Unexpected end of file
+        /// The [`Reader`] produced [`Event::Eof`] when it is not expecting,
+        /// for example, after producing [`Event::Start`] but before corresponding
+        /// [`Event::End`].
+        ///
+        /// [`Reader`]: crate::reader::Reader
+        /// [`Event::Eof`]: crate::events::Event::Eof
+        /// [`Event::Start`]: crate::events::Event::Start
+        /// [`Event::End`]: crate::events::Event::End
         UnexpectedEof,
         /// This error indicates that [`deserialize_struct`] was called, but there
         /// is no any XML element in the input. That means that you try to deserialize
@@ -176,7 +183,9 @@ pub mod serialize {
         ///
         /// [`deserialize_struct`]: serde::de::Deserializer::deserialize_struct
         ExpectedStart,
-        /// Unsupported operation
+        /// An attempt to deserialize to a type, that is not supported by the XML
+        /// store at current position, for example, attempt to deserialize `struct`
+        /// from attribute or attempt to deserialize binary data.
         Unsupported(&'static str),
         /// Too many events were skipped while deserializing a sequence, event limit
         /// exceeded. The limit was provided as an argument
@@ -195,12 +204,12 @@ pub mod serialize {
                 DeError::KeyNotRead => write!(f, "Invalid `Deserialize` implementation: `MapAccess::next_value[_seed]` was called before `MapAccess::next_key[_seed]`"),
                 DeError::UnexpectedStart(e) => {
                     f.write_str("Unexpected `Event::Start(")?;
-                    write_byte_string(f, &e)?;
+                    write_byte_string(f, e)?;
                     f.write_str(")`")
                 }
                 DeError::UnexpectedEnd(e) => {
                     f.write_str("Unexpected `Event::End(")?;
-                    write_byte_string(f, &e)?;
+                    write_byte_string(f, e)?;
                     f.write_str(")`")
                 }
                 DeError::UnexpectedEof => write!(f, "Unexpected `Event::Eof`"),

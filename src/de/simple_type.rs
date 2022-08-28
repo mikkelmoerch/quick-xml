@@ -546,7 +546,7 @@ impl<'de, 'a> SimpleTypeDeserializer<'de, 'a> {
 
     /// Constructor for tests
     #[inline]
-    fn new(content: CowRef<'de, 'a>, escaped: bool, decoder: Decoder) -> Self {
+    const fn new(content: CowRef<'de, 'a>, escaped: bool, decoder: Decoder) -> Self {
         Self {
             content,
             escaped,
@@ -1218,7 +1218,7 @@ mod tests {
         fn to_utf16(string: &str) -> Vec<u8> {
             let mut bytes = Vec::new();
             for ch in string.encode_utf16() {
-                bytes.extend(&ch.to_le_bytes());
+                bytes.extend_from_slice(&ch.to_le_bytes());
             }
             bytes
         }

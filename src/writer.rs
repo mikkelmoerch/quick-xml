@@ -6,9 +6,7 @@ use crate::encoding::UTF8_BOM;
 use crate::errors::{Error, Result};
 use crate::events::{attributes::Attribute, BytesCData, BytesStart, BytesText, Event};
 
-/// XML writer.
-///
-/// Writes XML `Event`s to a `Write` implementor.
+/// XML writer. Writes XML [`Event`]s to a [`std::io::Write`] implementor.
 ///
 /// # Examples
 ///
@@ -62,15 +60,15 @@ pub struct Writer<W: Write> {
 }
 
 impl<W: Write> Writer<W> {
-    /// Creates a Writer from a generic Write
-    pub fn new(inner: W) -> Writer<W> {
+    /// Creates a `Writer` from a generic writer.
+    pub const fn new(inner: W) -> Writer<W> {
         Writer {
             writer: inner,
             indent: None,
         }
     }
 
-    /// Creates a Writer with configured whitespace indents from a generic Write
+    /// Creates a `Writer` with configured whitespace indents from a generic writer.
     pub fn new_with_indent(inner: W, indent_char: u8, indent_size: usize) -> Writer<W> {
         Writer {
             writer: inner,
@@ -142,7 +140,7 @@ impl<W: Write> Writer<W> {
             Event::Empty(ref e) => self.write_wrapped(b"<", e, b"/>"),
             Event::Text(ref e) => {
                 next_should_line_break = false;
-                self.write(&e)
+                self.write(e)
             }
             Event::Comment(ref e) => self.write_wrapped(b"<!--", e, b"-->"),
             Event::CData(ref e) => {
@@ -325,13 +323,13 @@ impl<'a, W: Write> ElementWriter<'a, W> {
     }
 
     /// Create a new scope for writing XML inside the current element.
-    pub fn write_inner_content<F>(mut self, closure: F) -> Result<&'a mut Writer<W>>
+    pub fn write_inner_content<F>(self, closure: F) -> Result<&'a mut Writer<W>>
     where
         F: Fn(&mut Writer<W>) -> Result<()>,
     {
         self.writer
             .write_event(Event::Start(self.start_tag.borrow()))?;
-        closure(&mut self.writer)?;
+        closure(self.writer)?;
         self.writer
             .write_event(Event::End(self.start_tag.to_end()))?;
         Ok(self.writer)
@@ -366,10 +364,7 @@ impl Indentation {
     }
 
     fn shrink(&mut self) {
-        self.indents_len = match self.indents_len.checked_sub(self.indent_size) {
-            Some(result) => result,
-            None => 0,
-        };
+        self.indents_len = self.indents_len.saturating_sub(self.indent_size);
     }
 }
 
